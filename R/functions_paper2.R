@@ -255,6 +255,45 @@ generate_summary <- function(dat_eval, target_type, inc_or_cum, locations, first
               summary_available_per_model_max = available_per_model_max))
 }
 
+# transform to relative:
+summary_to_relative <- function(summ, name_baseline = "KIT-baseline"){
+  cols_to_relative <- colnames(summ)[grepl("ae.", colnames(summ)) | 
+                                       grepl("wis.", colnames(summ))]
+  cols_to_relative <- cols_to_relative[cols_to_relative %in% colnames(summ)]
+  summ <- summ[, c("model", cols_to_relative)]
+  # generate summary in terms of relative WIS:
+    for(co in cols_to_relative){
+      summ[, co] <- summ[, co]/
+        summ[summ$model == name_baseline, co]
+    }
+  
+  colnames(summ)[colnames(summ) != "model"] <- paste0("rel_", colnames(summ)[colnames(summ) != "model"])
+  
+  return(summ)
+}
+
+xtable_summary_relative <- function(tab, name_baseline = "KIT-baseline"){
+
+  tab <- tab[order(tab$model), ]
+  
+  tab_baselines <- tab[grepl("baseline", tab$model), ]
+  tab_baselines <- tab_baselines[order(tab_baselines$model), ]
+  
+  tab_ensembles <- tab[grepl("KITCOVIDhub", tab$model), ]
+  tab_ensembles <- tab_ensembles[order(tab_ensembles$model), ]
+  
+  tab_members <- tab[!grepl("KITCOVIDhub", tab$model) & !grepl("baseline", tab$model), ]
+  tab_members <- tab_members[order(tab_members$model), ]
+  
+  tab_to_print <- rbind(tab_members, tab_baselines, tab_ensembles)
+  
+  hline.after <- if(nrow(tab_members) != 0) nrow(tab_members) + c(0, nrow(tab_baselines)) else NULL
+  
+  print(xtable(tab_to_print), hline.after = hline.after,
+        include.rownames=FALSE, only.contents = TRUE, include.colnames = FALSE,
+        format.args = list(big.mark = ","))
+}
+
 # helper function to restrict summary to some horizons:
 restrict_summary <- function(summ, horizons = 1:2){
   columns_to_keep <- sapply(horizons, function(x) paste0(c("ae.", "wis.", "coverage0.5.", "coverage0.95."), x))
@@ -303,12 +342,12 @@ xtable_summary_tab <- function(summary_tab){
   tab <- summary_tab$summary_tab_imputed
   
   # re-format proportions:
-  columns_coverage <- colnames(tab)[grepl("coverage", colnames(tab))]
-  for(co in columns_coverage){
-    inds <- which(!is.na(tab[, co]))
-    tab[inds, co] <- round(tab[inds, co]*summary_tab$summary_available_per_model[inds, co])
-    tab[inds, co] <- paste0(tab[inds, co], "/", summary_tab$summary_available_per_model[inds, co])
-  }
+  # columns_coverage <- colnames(tab)[grepl("coverage", colnames(tab))]
+  # for(co in columns_coverage){
+  #   inds <- which(!is.na(tab[, co]))
+  #   tab[inds, co] <- round(tab[inds, co]*summary_tab$summary_available_per_model[inds, co])
+  #   tab[inds, co] <- paste0(tab[inds, co], "/", summary_tab$summary_available_per_model[inds, co])
+  # }
   
   # add stars:
   columns_scores <- colnames(tab)[grepl("ae", colnames(tab)) | grepl("wis", colnames(tab))]
@@ -354,18 +393,31 @@ xtable_summary_tab <- function(summary_tab){
 # add_baseline: should a grey area be added for the baseline model
 # main: plot title
 plot_performance_decay <- function(summ, models, imputed = TRUE, col, lty, legend = FALSE, 
-                                   max_horizon = 4, show_ae = TRUE, add_baseline = TRUE, main = ""){
+                                   max_horizon = 4, show_ae = TRUE, add_baseline = TRUE, main = "",
+                                   show_decomp = TRUE, use_sqrt = FALSE, at_y = NULL){
+  
+  if(show_decomp & use_sqrt) stop("Cannot show decomposition when using square root scale.")
+  
   if(imputed){
     tab <- summ$summary_tab_imputed
   }else{
     tab <- summ$summary_tab_raw
   }
   
-  yl <- c(0, max(c(tab$wis.1, tab[, paste0("wis.", max_horizon)]), na.rm = TRUE))
+  if(use_sqrt){
+    tab[grepl("ae.", colnames(tab)) | grepl("wis.", colnames(tab))] <- 
+      sqrt(tab[grepl("ae.", colnames(tab)) | grepl("wis.", colnames(tab))])
+  }
+  
+  yl <- c(0, max(c(tab$wis.1, tab[, paste0("ae.", max_horizon)]), na.rm = TRUE))
   
   plot(NULL, xlim = c(0.5, 4.5), ylim = yl,
        xlab = "", ylab = "mean WIS or AE", axes = FALSE)
-  axis(3, at = 1:max_horizon); axis(2); box()
+  axis(3, at = 1:max_horizon)
+  if(is.null(at_y)) at_y <- axTicks(2)
+  labels_y <- if(use_sqrt) at_y^2 else at_y
+  axis(2, at = at_y, labels = labels_y)
+  box()
   mtext("horizon", line = 1)
   mtext(main, line = 2.2, cex = 1.2)
   
@@ -387,12 +439,19 @@ plot_performance_decay <- function(summ, models, imputed = TRUE, col, lty, legen
     pen_l <- unlist(subset(tab, model == models[m])[, paste0("wgt_pen_l.", 1:max_horizon)])
     pen_u <- unlist(subset(tab, model == models[m])[, paste0("wgt_pen_u.", 1:max_horizon)])
     iw <- unlist(subset(tab, model == models[m])[, paste0("wgt_iw.", 1:max_horizon)])
+    wis <- unlist(subset(tab, model == models[m])[, paste0("wis.", 1:max_horizon)])
     ae <- unlist(subset(tab, model == models[m])[, paste0("ae.", 1:max_horizon)])
     
     for(i in 1:4){
       x <-  i - 0.5 + m/(n_models + 1)
-      add_score_decomp(x = x, pen_l = pen_l[i], pen_u = pen_u[i], 
-                       iw = iw[i], col = col[m], width = 1/(n_models + 1))
+      if(show_decomp){
+        add_score_decomp(x = x, pen_l = pen_l[i], pen_u = pen_u[i], 
+                         iw = iw[i], col = col[m], width = 1/(n_models + 1))
+      }else{
+        rect( x - 0.5/(n_models + 1), ybottom = 0, xright = x + 0.5/(n_models + 1),
+              ytop = wis[i], col = col[m])
+      }
+      
       points(x, ae[i], pch = 23, col = col[m], bg = "white")
       # mtext(models[m], at = x, side = 1, cex = 0.5, las = 2, line = 0.3)
       text(x, models[m], srt = 45, y = -yl[2]/20, adj = 1, cex = 0.8)
@@ -400,25 +459,45 @@ plot_performance_decay <- function(summ, models, imputed = TRUE, col, lty, legen
   }
   par(xpd = FALSE)
   
-  if(legend) legend("topleft", legend = c(if(show_ae) "absolute error",
-                                          "penalties for overprediction",
-                                          "spread of forecasts",
-                                          "penalties for underprediction",
-                                          if(add_baseline) "mean WIS and AE of KIT-baseline"), 
-                    pt.bg = c(if(show_ae) "white",
-                              lighten_colour(col[1], 0.3),
-                              col[1],
-                              "white",
-                              if(add_baseline) "lightgrey"),
-                    col = c(if(show_ae) col[1], 
-                            rep(col[1], 3),
-                            if(add_baseline) "lightgrey"),
-                    pch = c(if(show_ae) 23, 22, 22, 22, 
-                            if(add_baseline) 22,
-                            if(add_baseline) NA),
-                    lty = c(if(show_ae) NA, NA, NA, NA, 
-                            if(add_baseline) 1),
-                    cex = 0.9, bg = "white")
+  if(legend){
+    if(show_decomp){
+      legend("topleft", legend = c(if(show_ae) "absolute error",
+                                   "penalties for overprediction",
+                                   "spread of forecasts",
+                                   "penalties for underprediction",
+                                   if(add_baseline) "mean WIS and AE of KIT-baseline"), 
+             pt.bg = c(if(show_ae) "white",
+                       lighten_colour(col[1], 0.3),
+                       col[1],
+                       "white",
+                       if(add_baseline) "lightgrey"),
+             col = c(if(show_ae) col[1], 
+                     rep(col[1], 3),
+                     if(add_baseline) "lightgrey"),
+             pch = c(if(show_ae) 23, 22, 22, 22, 
+                     if(add_baseline) 22,
+                     if(add_baseline) NA),
+             lty = c(if(show_ae) NA, NA, NA, NA, 
+                     if(add_baseline) 1),
+             cex = 0.9, bg = "white")
+    }else{
+      legend("topleft", legend = c(if(show_ae) "mean AE",
+                                   "mean WIS",
+                                   if(add_baseline) "mean WIS and AE of KIT-baseline"), 
+             pt.bg = c(if(show_ae) "white",
+                       col[1],
+                       if(add_baseline) "lightgrey"),
+             col = c(if(show_ae) col[1], 
+                     rep(col[1], 1),
+                     if(add_baseline) "lightgrey"),
+             pch = c(if(show_ae) 23, 22,
+                     if(add_baseline) 22,
+                     if(add_baseline) NA),
+             lty = c(if(show_ae) NA, NA,
+                     if(add_baseline) 1),
+             cex = 0.9, bg = "white")
+    }
+  } 
 }
 
 

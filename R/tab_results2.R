@@ -15,7 +15,7 @@ source("functions_paper2.R")
 path_hub <- "../../covid19-forecast-hub-de"
 
 # specify truth data (needs to be run once with "ECDC" and once with "JHU"):
-truth <- "ECDC"
+truth <- "JHU"
 
 dat_evaluation <- read.csv(paste0(path_hub, "/evaluation/evaluation-", truth, ".csv"),
                            colClasses = list("target_end_date" = "Date", "forecast_date" = "Date", "timezero" = "Date"),
@@ -104,8 +104,12 @@ summary_gm_death_34 <- merge_inc_cum_summaries(summary_gm_inc_death_34,
                                                summary_gm_cum_death_34)
 
 # merge incident cases and deaths at 1 + 2 wk / 3 + 4wk horizons:
+summary_gm_inc <- merge_case_death_summaries(summary_gm_inc_case, summary_gm_inc_death)
 summary_gm_inc_12 <- merge_case_death_summaries(summary_gm_inc_case_12, summary_gm_inc_death_12)
 summary_gm_inc_34 <- merge_case_death_summaries(summary_gm_inc_case_34, summary_gm_inc_death_34)
+
+summary_gm_cum_12 <- merge_case_death_summaries(summary_gm_cum_case_12, summary_gm_cum_death_12)
+summary_gm_cum_34 <- merge_case_death_summaries(summary_gm_cum_case_34, summary_gm_cum_death_34)
 
 
 
@@ -156,8 +160,13 @@ summary_pl_death_34 <- merge_inc_cum_summaries(summary_pl_inc_death_34,
                                                summary_pl_cum_death_34)
 
 # merge incident cases and deaths at 1 + 2 wk / 3 + 4wk horizons:
+summary_pl_inc <- merge_case_death_summaries(summary_pl_inc_case, summary_pl_inc_death)
 summary_pl_inc_12 <- merge_case_death_summaries(summary_pl_inc_case_12, summary_pl_inc_death_12)
 summary_pl_inc_34 <- merge_case_death_summaries(summary_pl_inc_case_34, summary_pl_inc_death_34)
+
+summary_pl_cum_12 <- merge_case_death_summaries(summary_pl_cum_case_12, summary_pl_cum_death_12)
+summary_pl_cum_34 <- merge_case_death_summaries(summary_pl_cum_case_34, summary_pl_cum_death_34)
+
 
 
 # write out:
@@ -172,8 +181,21 @@ for(fil in c("summary_gm_case_12",
              "summary_gm_inc_12",
              "summary_gm_inc_34",
              "summary_pl_inc_12",
-             "summary_pl_inc_34")){
+             "summary_pl_inc_34",
+             "summary_gm_cum_12",
+             "summary_gm_cum_34",
+             "summary_pl_cum_12",
+             "summary_pl_cum_34")){
   writeLines(xtable_summary_tab(get(fil)), con = paste0("../input/", fil, "_", truth, "_2.tex"))
+}
+
+# write out relative tables (added at revision):
+
+
+for(fil in c("summary_gm_inc",
+             "summary_pl_inc")){
+  writeLines(xtable_summary_relative(summary_to_relative(get(fil)$summary_tab_imputed)),
+             con = paste0("../input/", fil, "_", truth, "_relative_2.tex"))
 }
 
 source("define_colors2.R")
@@ -316,10 +338,16 @@ for(fil in c("summary_gmregions_case_12",
 ### Plot of performance decay over horizons:
 
 models_horizons_germany <- c("KITCOVIDhub-median_ensemble",
-                             models_gm$main[models_gm$main != "KITCOVIDhub-median_ensemble"],
+                             "epiforecasts-EpiExpert", "epiforecasts-EpiNow2", "FIAS_FZJ-Epi1Ger",
+                             "itwm-dSEIR", "ITWW-county_repro", "Karlen-pypm" ,               
+                             "LANL-GrowthRate", "LeipzigIMISE-SECIR", 
+                             "MIT_CovidAnalytics-DELPHI", "USC-SIkJalpha",
                              "KIT-extrapolation_baseline", "KIT-time_series_baseline")
 models_horizons_poland <- c("KITCOVIDhub-median_ensemble",
-                            models_pl$main[models_gm$main != "KITCOVIDhub-median_ensemble"],
+                            "epiforecasts-EpiExpert", "epiforecasts-EpiNow2", 
+                            "ICM-agentModel", "ITWW-county_repro", "LANL-GrowthRate",
+                            "MIMUW-StochSEIR", "MIT_CovidAnalytics-DELPHI", 
+                            "MOCOS-agent1", "USC-SIkJalpha",
                             "KIT-extrapolation_baseline", "KIT-time_series_baseline")
 
 # generate plot:
@@ -329,7 +357,8 @@ par(mfrow = c(4, 1), mar = c(7.5, 4, 4, 2))
 
 plot_performance_decay(summary_gm_inc_case, 
                        models = models_horizons_germany,
-                       col = cols[models_horizons_germany], legend = TRUE, main = "Cases, Germany")
+                       col = cols[models_horizons_germany], legend = TRUE,
+                       main = "Cases, Germany")
 
 plot_performance_decay(summary_gm_inc_death, 
                        models = models_horizons_germany,
@@ -344,3 +373,36 @@ plot_performance_decay(summary_pl_inc_death,
                        col = cols[models_horizons_poland], legend = TRUE, main = "Deaths, Poland")
 
 dev.off()
+
+
+
+# generate plot without decomposition but with square root:
+pdf("../figures/performance_horizons_simple2b.pdf", width = 9, height = 12)
+
+par(mfrow = c(4, 1), mar = c(7.5, 4, 4, 2))
+
+plot_performance_decay(summary_gm_inc_case, 
+                       models = models_horizons_germany,
+                       col = cols[models_horizons_germany], legend = TRUE,
+                       main = "Cases, Germany", use_sqrt = TRUE, show_decomp = FALSE)
+
+plot_performance_decay(summary_gm_inc_death, 
+                       models = models_horizons_germany,
+                       col = cols[models_horizons_germany], legend = FALSE,
+                       main = "Deaths, Germany", use_sqrt = TRUE, show_decomp = FALSE)
+
+plot_performance_decay(summary_pl_inc_case, 
+                       models = models_horizons_poland,
+                       col = cols[models_horizons_poland], legend = FALSE, 
+                       main = "Cases, Poland", use_sqrt = TRUE, show_decomp = FALSE)
+
+plot_performance_decay(summary_pl_inc_death, 
+                       models = models_horizons_poland,
+                       col = cols[models_horizons_poland], legend = FALSE, 
+                       main = "Deaths, Poland", use_sqrt = TRUE, show_decomp = FALSE)
+
+dev.off()
+
+
+
+
