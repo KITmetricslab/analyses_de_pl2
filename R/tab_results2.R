@@ -15,7 +15,7 @@ source("functions_paper2.R")
 path_hub <- "../../covid19-forecast-hub-de"
 
 # specify truth data (needs to be run once with "ECDC" and once with "JHU"):
-truth <- "JHU"
+truth <- "ECDC"
 
 dat_evaluation <- read.csv(paste0(path_hub, "/evaluation/evaluation-", truth, ".csv"),
                            colClasses = list("target_end_date" = "Date", "forecast_date" = "Date", "timezero" = "Date"),
